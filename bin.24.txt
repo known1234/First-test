@@ -1,0 +1,524 @@
+Generate the data using gen2data file :-
+function [X, d] = gen_data2(distance, angle, type_data, class_labels, npts)
+    % 1. Convert the input angle (assumed in degrees) to radians
+    theta = deg2rad(angle);                               
+
+    % 2. Define Means
+    mu1 = [0 0];                                          % mean of class -1
+    mu2 = distance * [cos(theta) sin(theta)];             % mean of class +1
+    
+    % 3. Define Covariance
+    Sigma = eye(2);                                       
+    
+    % 4. Generate Data Points (X)
+    X = [mvnrnd(mu1, Sigma, npts/2);                      % class -1 points
+         mvnrnd(mu2, Sigma, npts/2)];                     % class +1 points
+         
+    % 5. Generate Labels (d)
+    % Note: Added the transpose (') at the end to make it a column vector (N x 1)
+    % to match the shape of X.
+    d = [repmat(class_labels(1), 1, npts/2), ...
+         repmat(class_labels(2), 1, npts/2)]';            
+end
+
+
+
+Experiment1: -  Write MATLAB code to realize the logical AND function with a neural net that learns the desired function through Hebb learning
+
+Code:- 
+% Hebbian learning for logical AND (bipolar representation)
+% Patterns: inputs in {0,1} -> mapped to bipolar {-1,+1}
+% Desired outputs: AND -> -1 except (1,1) -> +1
+
+% --- Data (4 patterns) ---
+X = [0 0; 0 1; 1 0; 1 1];          % original binary inputs (4x2)
+d_bin = all(X==1,2);               % AND output in binary: [0 0 0 1]'
+d = 2*d_bin - 1;                   % map to bipolar labels {-1,+1} (4x1)
+
+% map inputs to bipolar {-1,+1}
+Xb = 2*X - 1;                      % (4x2)
+
+% augment with bias term (1) so weight vector includes threshold
+Xb_aug = [Xb ones(size(Xb,1),1)];  % (4x3)
+
+% --- Hebb learning rule (vectorized) ---
+% w = sum_i (d_i * x_i)  <=>  Xb_aug' * d
+w = Xb_aug' * d;                   % (3x1) weights: [w1; w2; bias]
+
+% optional normalization (not required): w = w / size(Xb_aug,1);
+
+% --- Test the learned network ---
+scores = Xb_aug * w;               % (4x1) continuous outputs
+predicted = sign(scores);          % {-1,0,+1}
+predicted(predicted==0) = 1;       % resolve boundary ties (choose +1)
+
+% --- Compute accuracy and confusion matrix ---
+accuracy = mean(predicted == d) * 100;
+C = confusionmat(d, predicted, 'Order', [-1 1]);
+
+% --- Display results ---
+fprintf('Weights (w1, w2, bias):\n');
+disp(w');
+fprintf('Predicted (bipolar): %s\n', mat2str(predicted'));
+fprintf('Target    (bipolar): %s\n', mat2str(d'));
+fprintf('Accuracy: %.2f%%\n', accuracy);
+disp('Confusion matrix (rows: true {-1,+1}, cols: predicted {-1,+1}):');
+disp(C);
+
+% --- (Optional) Plot patterns and decision boundary ---
+figure; hold on;
+pos = find(d==1); neg = find(d==-1);
+plot(X(pos,1), X(pos,2), 'ro', 'MarkerSize',10, 'DisplayName','AND=1');
+plot(X(neg,1), X(neg,2), 'bx', 'MarkerSize',10, 'DisplayName','AND=0');
+
+% decision boundary: w1*x1 + w2*x2 + bias = 0 => x2 = -(w1*x1 + bias)/w2
+xv = linspace(-0.5,1.5,100);
+if abs(w(2))>1e-6
+    yv = -(w(1)* (2*xv-1) + w(3)) / w(2); % note: decision computed in bipolar space
+    % convert xv back to bipolar before using w(1)*x1b: x1b = 2*xv - 1
+    plot(xv, (yv+1)/2, 'k-', 'LineWidth',1.5); % convert yb -> binary axis for plot
+end
+xlabel('x_1');
+ylabel('x_2');
+title('Hebb-learned AND (red = 1, blue = 0)');
+legend('Location','best');
+axis([-0.5 1.5 -0.5 1.5]);
+grid on;
+hold off;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+experiment 2 :- Linear classification using least squares. Construct an ROC curve for a least squares linear classifier applied to a data set where the two classes overlap significantly. Set the distance between the centers of the two classes at two standard deviations to ensure a fair number of misclassifications.
+
+% Parameters
+distance = 4;
+angle = 30;             % degrees
+type_data = 'l';        % linear data
+class_labels = [-1 1];  % classes as -1 and +1
+npts = 100;             % number of points
+
+% Generate data
+[X, d] = gen_data2(distance, angle, type_data, class_labels, npts);
+
+% Add bias term (column of ones)
+X_aug = [X ones(size(X,1),1)];  % Nx3 matrix
+
+% Calculate weights using Least Squares (pseudo-inverse)
+w = pinv(X_aug) * d;
+w1 = pinv(X_aug' * X_aug) * X_aug' * d;
+
+
+% Predict labels using the learned model
+ predicted = sign(X_aug * w);  % sign function gives -1 or +1
+%predicted = (X_aug * w);  % sign function gives -1 or +1
+
+% Calculate accuracy
+num_correct = sum(predicted == d');
+accuracy = (num_correct / npts) * 100;
+
+% Display learned weights and accuracy
+disp('Learned weights (bias and coefficients):');
+disp(w);
+plot(w)
+fprintf('Accuracy: %.2f%%\n', accuracy);
+
+% Plot data
+figure; hold on;
+pos = find(d == 1);
+neg = find(d == -1);
+
+plot(X(pos,1), X(pos,2), 'ro', 'MarkerSize', 8, 'DisplayName', 'Class +1');
+plot(X(neg,1), X(neg,2), 'bx', 'MarkerSize', 8, 'DisplayName', 'Class -1');
+
+% Correct decision boundary
+x_vals = linspace(min(X(:,1))-1, max(X(:,1))+1, 100);
+y_vals = -(w(1)*x_vals + w(3)) / w(2);
+plot(x_vals, y_vals, 'k-', 'LineWidth', 2, 'DisplayName', 'Decision Boundary');
+
+xlabel('x_1');
+ylabel('x_2');
+title(sprintf('Least Squares Linear Classifier (Accuracy: %.2f%%)', accuracy));
+legend('Location', 'best');
+grid on;
+hold off;
+
+
+% Optional: extract values for clarity
+C = confusionmat(d, predicted, 'Order', class_labels);  % 2x2
+
+% Safety: if confusionmat returned something unexpected, handle it
+if ~isequal(size(C), [2 2])
+    error('confusion matrix has unexpected size. Check labels in d and predicted.');
+end
+
+TN = C(1,1);
+FP = C(1,2);
+FN = C(2,1);
+TP = C(2,2);
+
+fprintf('True Positives: %d\n', TP);
+fprintf('True Negatives: %d\n', TN);
+fprintf('False Positives: %d\n', FP);
+fprintf('False Negatives: %d\n', FN);
+% Compute decision scores (raw model outputs)
+scores = X_aug * w;
+
+% Since class_labels are [-1, 1], convert d to logical for perfcurve
+% perfcurve expects positive class label; here positive class is 1
+posclass = 1;
+[fpRate, tpRate, T, AUC] = perfcurve(d, scores,1);
+
+% Plot ROC curve
+figure;
+plot(fpRate, tpRate, 'b-', 'LineWidth', 2);
+hold on;
+plot([0 1], [0 1], 'r--'); % random classifier line
+xlabel('False Positive Rate');
+ylabel('True Positive Rate');
+title(sprintf('ROC Curve (AUC = %.3f)', AUC));
+grid on;
+hold off;
+
+
+>> second
+Learned weights (bias and coefficients):
+    0.2930
+    0.2873
+   -0.8096
+Accuracy: 50.00%
+
+True Positives: 49
+True Negatives: 45
+False Positives: 5
+False Negatives: 1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Experiment 3: -  Use the linear SVM to classify a linearly separable data set. Use gen _ data2 to produce a training set (N = 100) with two classes identified as class -1 and class +1, which are Gaussian distributed and separated by 5 standard deviations.
+clc; clear; close all;
+
+%% EXPERIMENT 3: Linear SVM (Standard Method)
+% Requirement: Classify linearly separable data (sep by 5 std devs)
+
+% --------------------------------------------------
+% 1. Generate Data
+% --------------------------------------------------
+% Make sure gen_data2.m is in your Current Folder
+distance = 5;           % 5 standard deviations as requested
+angle = 90;
+type_data = 'l';        % Linear
+class_labels = [-1 1]; 
+npts = 100;
+
+% Call the function
+if exist('gen_data2', 'file') == 2
+    [X, d] = gen_data2(distance, angle, type_data, class_labels, npts);
+else
+    error('Error: gen_data2.m file not found. Please save the function code first.');
+end
+
+% Ensure d is a column vector
+d = d(:); 
+
+% --------------------------------------------------
+% 2. Train Linear SVM
+% --------------------------------------------------
+% 'fitcsvm' is the standard MATLAB command for SVM
+SVMModel = fitcsvm(X, d, 'KernelFunction', 'linear', 'ClassNames', [-1, 1]);
+
+% --------------------------------------------------
+% 3. Evaluate Accuracy
+% --------------------------------------------------
+predicted_label = predict(SVMModel, X);
+accuracy = sum(predicted_label == d) / length(d) * 100;
+fprintf('SVM Training Accuracy: %.2f%%\n', accuracy);
+
+% --------------------------------------------------
+% 4. Visualization
+% --------------------------------------------------
+figure;
+% Use gscatter for easy plotting of classes
+gscatter(X(:,1), X(:,2), d, 'rb', 'xo');
+hold on;
+
+% Highlight Support Vectors
+sv = SVMModel.SupportVectors;
+plot(sv(:,1), sv(:,2), 'ko', 'MarkerSize', 12, 'LineWidth', 1.5, 'DisplayName', 'Support Vectors');
+
+% Draw Decision Boundary
+% The boundary equation is beta*x + b = 0
+beta = SVMModel.Beta;
+b = SVMModel.Bias;
+
+% Calculate line coordinates
+x_range = linspace(min(X(:,1))-1, max(X(:,1))+1, 100);
+y_boundary = -(beta(1)*x_range + b) / beta(2);
+
+plot(x_range, y_boundary, 'k-', 'LineWidth', 2, 'DisplayName', 'Decision Boundary');
+
+title(sprintf('Exp 3: Linear SVM (Accuracy: %.2f%%)', accuracy));
+xlabel('x_1'); ylabel('x_2');
+legend('Location', 'best');
+grid on;
+hold off;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Experiment 5:-  Classify a two-variable input pattern consisting of two classes. Each class consists of 50 patterns having a Gaussian distribution over both variables. The centers of the two classes are far enough apart so that the classes are linearly separable.
+
+clc; clear; close all;
+
+%% Experiment 5: Linear Classification (using Discriminant Analysis)
+
+% 1. Generate Data (Gaussian, Linearly Separable)
+distance = 6;           % Large distance to ensure linear separability
+angle = 45;             % Angle of separation
+type_data = 'l';        
+class_labels = [-1 1];  % Classes
+npts = 50;              % Question specifically asks for 50 patterns
+
+% Generate the data using your function
+[X, d] = gen_data2(distance, angle, type_data, class_labels, npts);
+
+% 2. Fit the Discriminant Analysis Model
+DiscrModel = fitcdiscr(X, d);
+
+% 3. Predict and Calculate Accuracy
+predicted_discr = predict(DiscrModel, X);
+accuracy_discr = sum(predicted_discr == d) / (2*npts) * 100;
+
+% 4. Confusion Matrix
+C_discr = confusionmat(d, predicted_discr);
+
+% Display Text Results
+fprintf('Method: Linear Discriminant Analysis\n');
+fprintf('Accuracy: %.2f%%\n', accuracy_discr);
+disp('Confusion Matrix:');
+disp(C_discr);
+
+% 5. Plot Data and Decision Boundary
+figure; hold on;
+% Plot points
+pos = find(d == 1);
+neg = find(d == -1);
+plot(X(pos,1), X(pos,2), 'ro', 'MarkerFaceColor', 'r', 'DisplayName', 'Class +1');
+plot(X(neg,1), X(neg,2), 'bo', 'MarkerFaceColor', 'b', 'DisplayName', 'Class -1');
+
+% Calculate and Plot Boundary
+% The boundary is where the score is 0. 
+% For LDA: K + L(1)*x1 + L(2)*x2 = 0
+coeff = DiscrModel.Coeffs(1,2);
+const = coeff.Const;
+linear = coeff.Linear;
+
+x_vals = linspace(min(X(:,1))-1, max(X(:,1))+1, 100);
+y_vals_discr = -(const + linear(1)*x_vals) / linear(2);
+
+plot(x_vals, y_vals_discr, 'k-', 'LineWidth', 2, 'DisplayName', 'Decision Boundary');
+
+title('Experiment 5: Classification of Gaussian Patterns');
+legend('Location', 'best');
+grid on;
+hold off;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Experiment 7: -Train a three-layer net to classify a training set that consists of two classes arranged diagonally across from one another. Use a 100-point training set and a net with six neurons in the input and hidden layers. Evaluate the trained net on a test set of 400 points
+
+% exp3_diag_net.m
+rng(1); % for reproducibility
+
+%% ---- Parameters ----
+nTrain = 100;             % total training points
+nTest  = 400;             % total test points
+hiddenNeurons = 6;        % hidden layer size
+% We'll create 6 input features from the 2D points (see below)
+
+% class centers (diagonally across from one another)
+muA = [-2  2];   % class A center
+muB = [ 2 -2];   % class B center
+Sigma = 0.5 * eye(2);  % covariance (controls overlap)
+
+%% ---- Generate data (2D) ----
+nTrainPerClass = nTrain/2;
+nTestPerClass  = nTest/2;
+
+% Training samples
+XA = mvnrnd(muA, Sigma, nTrainPerClass);
+XB = mvnrnd(muB, Sigma, nTrainPerClass);
+Xtrain2 = [XA; XB];                     % (nTrain x 2)
+ytrain_labels = [ones(nTrainPerClass,1)*1; ones(nTrainPerClass,1)*2]; % class indices 1 & 2
+
+% Test samples
+TA = mvnrnd(muA, Sigma, nTestPerClass);
+TB = mvnrnd(muB, Sigma, nTestPerClass);
+Xtest2 = [TA; TB];                       % (nTest x 2)
+ytest_labels = [ones(nTestPerClass,1)*1; ones(nTestPerClass,1)*2];
+
+%% ---- Expand to 6-dimensional feature vector ----
+% We map each 2D point [x1 x2] -> 6 features:
+% [x1, x2, x1^2, x2^2, x1.*x2, 1]  (last is bias feature)
+featMap = @(X2) [ X2(:,1), X2(:,2), X2(:,1).^2, X2(:,2).^2, X2(:,1).*X2(:,2), ones(size(X2,1),1) ];
+
+Xtrain = featMap(Xtrain2)';  % (6 x nTrain)  -> MATLAB wants features x samples
+Xtest  = featMap(Xtest2)';   % (6 x nTest)
+
+%% ---- Prepare targets for patternnet (one-hot) ----
+Ttrain = full(ind2vec(ytrain_labels')) ; % (2 x nTrain)
+Ttest  = full(ind2vec(ytest_labels')) ;  % (2 x nTest)
+
+%% ---- Create and train the network ----
+net = patternnet(hiddenNeurons);   % single hidden layer with 'hiddenNeurons' neurons
+
+% Optional training settings (you can tweak)
+net.trainParam.max_fail = 6;      % early stopping patience
+net.trainParam.epochs = 200;      % max epochs
+net.divideParam.trainRatio = 0.8; % internal split (can leave default)
+net.divideParam.valRatio   = 0.2;
+net.divideParam.testRatio  = 0;
+
+% Train
+[net, tr] = train(net, Xtrain, Ttrain);
+
+%% ---- Evaluate on test set ----
+Ytest_scores = net(Xtest);           % (2 x nTest) raw outputs
+Ytest_predIdx = vec2ind(Ytest_scores); % predicted class indices (1 or 2)
+
+% Accuracy
+accuracy_test = mean(Ytest_predIdx' == ytest_labels) * 100;
+
+% Confusion matrix
+C = confusionmat(ytest_labels, Ytest_predIdx);
+
+%% ---- Display results ----
+fprintf('Test Accuracy: %.2f%%\n', accuracy_test);
+disp('Confusion matrix (rows=true class 1/2, cols=predicted 1/2):');
+disp(C);
+
+%% ---- (Optional) Visualize original 2D points with predicted labels ----
+figure; hold on;
+% plot true test points colored by predicted label
+idxPred1 = find(Ytest_predIdx==1);
+idxPred2 = find(Ytest_predIdx==2);
+
+% convert indices in 6xN order back to 2D coordinates for plotting
+pts = Xtest2; % nTest x 2 (we have this earlier)
+
+plot(pts(idxPred1,1), pts(idxPred1,2), 'ro', 'DisplayName','Predicted class 1');
+plot(pts(idxPred2,1), pts(idxPred2,2), 'bx', 'DisplayName','Predicted class 2');
+
+% also plot class centers
+plot(muA(1), muA(2), 'k*', 'MarkerSize',10, 'DisplayName','Center A');
+plot(muB(1), muB(2), 'k+', 'MarkerSize',10, 'DisplayName','Center B');
+
+legend('Location','best');
+xlabel('x_1'); ylabel('x_2');
+title(sprintf('Test results (Accuracy: %.2f%%)', accuracy_test));
+grid on; hold off;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Experiment 10: -Understand the Graphical User Interface of Neural Networks.
+
+
+
+
+
+
+
+
+
+
